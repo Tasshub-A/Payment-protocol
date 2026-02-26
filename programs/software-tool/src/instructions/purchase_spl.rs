@@ -18,6 +18,10 @@ pub struct PurchaseSpl<'info> {
     #[account()]
     pub platform: UncheckedAccount<'info>,
 
+    /// CHECK: Optional referrer, we only use the pubkey for events
+    #[account()]
+    pub referrer: Option<UncheckedAccount<'info>>,
+
     /// SPL token mint (USDC / USDT / any supported SPL)
     pub mint: Box<Account<'info, Mint>>,
 
@@ -48,6 +52,15 @@ pub struct PurchaseSpl<'info> {
     )]
     pub platform_token_account: Box<Account<'info, TokenAccount>>,
 
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        associated_token::mint = mint,
+        associated_token::authority = referrer,
+        constraint = referrer_token_account.mint == mint.key() @ ErrorCode::InvalidTokenMint,
+    )]
+    pub referrer_token_account: Option<Box<Account<'info, TokenAccount>>>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -62,44 +75,82 @@ pub fn handler(
     purchase_id: String,
     amount: u64,
     fee_bps: u16,
+    referrer_fee_bps: u16,
 ) -> Result<()> {
     let mint = &ctx.accounts.mint;
 
     require!(
-        constants::SUPPORTED_SPL_TOKEN == mint.key(),
+        constants::SUPPORTED_SPL_TOKENS.contains(&mint.key()),
         ErrorCode::UnsupportedSplToken
     );
 
-    if (fee_bps as u64) > constants::MAX_FEE_BPS {
+    if (fee_bps as u64) > constants::MAX_FEE_BPS
+        || (referrer_fee_bps as u64) > constants::MAX_REFERRER_FEE_BPS
+    {
         return Err(ErrorCode::FeeBpsExceedsMaximum.into());
     }
 
     let buyer = &ctx.accounts.buyer;
     let creator = &ctx.accounts.creator;
     let platform = &ctx.accounts.platform;
+    let referrer_opt = ctx.accounts.referrer.as_ref();
 
-    let fee_amount = amount
-        .checked_mul(fee_bps as u64)
-        .ok_or(ErrorCode::Overflow)?
-        .checked_div(constants::BPS_DENOMINATOR)
-        .ok_or(ErrorCode::Underflow)?;
+    let buyer_ata = &ctx.accounts.buyer_token_account;
+    let creator_ata = &ctx.accounts.creator_token_account;
+    let platform_ata = &ctx.accounts.platform_token_account;
+    let referrer_ata_opt = ctx.accounts.referrer_token_account.as_ref();
 
-    let creator_amount = amount.checked_sub(fee_amount).ok_or(ErrorCode::Underflow)?;
+    let token_program = &ctx.accounts.token_program;
 
-    send_spl(
-        &ctx.accounts.token_program,
-        &ctx.accounts.buyer_token_account,
-        &ctx.accounts.creator_token_account,
+    let mut referrer_fee_amount: u64 = 0;
+
+    /*
+     * If a referrer is provided, calculate the referrer fee and send it to the referrer
+     */
+    if let Some(referrer_ata) = referrer_ata_opt {
+        /*
+         * Calculate the referrer fee amount and send it to the referrer.
+         * The referrer fee is a portion of the total fee defined by referrer_fee_bps.
+         */
+
+        referrer_fee_amount = apply_fee_and_send(
+            amount,
+            referrer_fee_bps as u64,
+            buyer_ata,
+            referrer_ata,
+            token_program,
+            &buyer.to_account_info(),
+        )?;
+    }
+
+    /*
+     * Calculate the platform fee amount and send it to the platform.
+     * The platform fee is a portion of the total fee defined by fee_bps,
+     */
+    let platform_fee_amount: u64 = apply_fee_and_send(
+        amount,
+        fee_bps as u64,
+        buyer_ata,
+        platform_ata,
+        token_program,
         &buyer.to_account_info(),
-        creator_amount,
     )?;
 
+    /*
+     * Calculate the creator amount by subtracting the platform fee and referrer fee from the total amount.
+     */
+    let creator_amount = amount
+        .checked_sub(platform_fee_amount)
+        .ok_or(ErrorCode::Underflow)?
+        .checked_sub(referrer_fee_amount)
+        .ok_or(ErrorCode::Underflow)?;
+
     send_spl(
-        &ctx.accounts.token_program,
-        &ctx.accounts.buyer_token_account,
-        &ctx.accounts.platform_token_account,
+        token_program,
+        buyer_ata,
+        creator_ata,
         &buyer.to_account_info(),
-        fee_amount,
+        creator_amount,
     )?;
 
     let clock = Clock::get()?;
@@ -110,18 +161,48 @@ pub fn handler(
         buyer: buyer.key(),
         creator: creator.key(),
         platform: platform.key(),
+        referrer: referrer_opt.map(|r| r.key()),
         mint: Some(mint.key()),
         currency_type: CurrencyType::SPL,
         decimals: mint.decimals,
         amount,
         creator_amount,
-        platform_fee: fee_amount,
+        platform_fee: platform_fee_amount,
+        referrer_fee: referrer_fee_amount,
         fee_bps,
         slot: clock.slot,
         timestamp: clock.unix_timestamp,
     });
 
     Ok(())
+}
+
+/*
+ * Helper function to calculate the fee amount based on the provided basis points (bps) and send it to the recipient.
+ */
+fn apply_fee_and_send<'info>(
+    amount: u64,
+    bps: u64,
+    from: &Account<'info, TokenAccount>,
+    to: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    authority: &AccountInfo<'info>,
+) -> Result<u64> {
+    if bps == 0 {
+        return Ok(0);
+    }
+
+    let fee_amount = amount
+        .checked_mul(bps)
+        .ok_or(ErrorCode::Overflow)?
+        .checked_div(constants::BPS_DENOMINATOR)
+        .ok_or(ErrorCode::Underflow)?;
+
+    if fee_amount > 0 {
+        send_spl(token_program, from, to, authority, fee_amount)?;
+    }
+
+    Ok(fee_amount)
 }
 
 /**

@@ -18,24 +18,32 @@ const main = async () => {
     "6mDrkCKLzMuDDJr4A1vWHRnGEbDwW4a1mJg2RyioaCAT"
   );
 
+  const referrer = new PublicKey(
+    "3QfzoJ4KwCeqskuwA9pXQf3FzfkCPA6C5s5yKyq1o8Tx"
+  );
+
   const buyer_ata = await getAssociatedTokenAddress(splMint, buyer);
   const creator_ata = await getAssociatedTokenAddress(splMint, creator);
   const platform_ata = await getAssociatedTokenAddress(splMint, platform);
+  const referrer_ata = await getAssociatedTokenAddress(splMint, referrer);
   const tx = await $.program.methods
     .purchaseWithToken(
       "content_id_123",
       "purchase_id_123",
       new BN(10_000_000), // 10 USDC in lamports
-      1500 // fee percentage
+      1400, // fee percentage
+      100, // referrer fee percentage
     )
     .accounts({
       buyer,
       creator,
       platform,
+      referrer,
       mint: splMint,
       buyerTokenAccount: buyer_ata,
       createtorTokenAccount: creator_ata,
       platformTokenAccount: platform_ata,
+      referrerTokenAccount: referrer_ata,
     })
     .rpc();
 

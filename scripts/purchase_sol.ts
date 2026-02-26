@@ -11,13 +11,15 @@ const main = async () => {
     .purchaseWithSol(
       "content_id_123",
       "purchase_id_123",
-      new BN(1_000_000_00), // 1 SOL in lamports
-      1500 // fee percentage
+      new BN(1_000_000_00), // 0.1 SOL in lamports
+      1400, // fee percentage
+      100, // referrer fee percentage
     )
     .accounts({
       buyer: $.userPk.publicKey,
       creator: new PublicKey("9jdZCoouyfcw4vitGxGcGq9Ayxb9nX3FPrn5nAwfGkTp"),
       platform: new PublicKey("6mDrkCKLzMuDDJr4A1vWHRnGEbDwW4a1mJg2RyioaCAT"),
+      referrer: new PublicKey("3QfzoJ4KwCeqskuwA9pXQf3FzfkCPA6C5s5yKyq1o8Tx"),
     })
     .rpc();
 

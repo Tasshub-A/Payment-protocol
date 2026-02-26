@@ -7,7 +7,7 @@ pub mod types;
 
 use instructions::*;
 
-declare_id!("9svVtb2TeXLDu7zy5XYni3FieghQu3KA7Q564VSb2H8w");
+declare_id!("C3Veo4eAWJruyBVBtedtRm2oKpvg53v2dxZmjMzEDWy1");
 
 #[program]
 pub mod software_tool {
@@ -26,8 +26,16 @@ pub mod software_tool {
         purchase_id: String,
         amount: u64,
         fee_bps: u16,
+        referrer_fee_bps: u16,
     ) -> Result<()> {
-        instructions::purchase_sol::handler(ctx, content_id, purchase_id, amount, fee_bps)
+        instructions::purchase_sol::handler(
+            ctx,
+            content_id,
+            purchase_id,
+            amount,
+            fee_bps,
+            referrer_fee_bps,
+        )
     }
 
     /**
@@ -42,7 +50,15 @@ pub mod software_tool {
         purchase_id: String,
         amount: u64,
         fee_bps: u16,
+        referrer_fee_bps: u16,
     ) -> Result<()> {
-        instructions::purchase_spl::handler(ctx, content_id, purchase_id, amount, fee_bps)
+        instructions::purchase_spl::handler(
+            ctx,
+            content_id,
+            purchase_id,
+            amount,
+            fee_bps,
+            referrer_fee_bps,
+        )
     }
 }

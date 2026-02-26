@@ -68,7 +68,7 @@ graph TD
 Program ID:
 
 ```
-9svVtb2TeXLDu7zy5XYni3FieghQu3KA7Q564VSb2H8w
+C3Veo4eAWJruyBVBtedtRm2oKpvg53v2dxZmjMzEDWy1
 ```
 
 Main entrypoints:
@@ -295,6 +295,7 @@ After every transaction:
 Build and run tests:
 
 ```bash
+yarn install
 anchor build
 anchor test
 ```
